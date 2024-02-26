@@ -1,35 +1,47 @@
 trigger:
-- main
+  branches:
+    include:
+      - main
 
 pool:
-  vmImage: ubuntu-latest
+  vmImage: 'ubuntu-latest'
 
 steps:
+- script: |
+    npm install
+    npm run build
+  displayName: 'Install and build'
 
-- task: AzureCLI@2
+- task: PublishBuildArtifacts@1
   inputs:
-    azureSubscription: 'Towards-AzurePortal'
-    scriptType: 'bash'
-    scriptLocation: 'inlineScript'
-    inlineScript: |
-      docker build -t mylabacr13.azurecr.io/web-game:tag 2048-game
-      az acr login -n mylabacr13
-      docker push mylabacr13.azurecr.io/web-game:tag
+    pathtoPublish: '$(Build.SourcesDirectory)/dist'
+    artifactName: 'dist'
 
-- script: cat 01_kubernetes_aks/app-deploy.yaml
-
-- task: Kubernetes@1
+# Add additional steps for testing and deployment as needed
+steps:
+- task: DotNetCoreCLI@2
   inputs:
-    connectionType: 'Azure Resource Manager'
-    azureSubscriptionEndpoint: 'Towards-AzurePortal'
-    azureResourceGroup: 'TestLab-RG'
-    kubernetesCluster: 'testlab-aks'
-    namespace: 'default'
-    command: 'apply'
-    useConfigurationFile: true
-    configuration: '01_kubernetes_aks'
-    secretType: 'dockerRegistry'
-    containerRegistryType: 'Azure Container Registry'
-    azureSubscriptionEndpointForSecrets: 'Towards-AzurePortal'
-    azureContainerRegistry: 'mylabacr13.azurecr.io'
-    forceUpdate: false
+    command: 'build'
+    projects: '**/*.csproj'
+    arguments: '--configuration $(buildConfiguration)'
+  displayName: 'dotnet build $(buildConfiguration)'
+
+- task: DotNetCoreCLI@2
+  inputs:
+    command: 'publish'
+    publishWebProjects: true
+    arguments: '--configuration $(buildConfiguration) --output $(Build.ArtifactStagingDirectory)'
+  displayName: 'dotnet publish $(buildConfiguration)'
+
+- task: PublishBuildArtifacts@1
+  inputs:
+    pathtoPublish: '$(Build.ArtifactStagingDirectory)'
+    artifactName: 'publishedFiles'
+
+- task: AzureWebApp@1
+  inputs:
+    azureSubscription: 'testingdot'
+    appType: 'webAppLinux'
+    appName: 'testing1209'
+    package: '$(Build.ArtifactStagingDirectory)/**/*.zip'
+    runtimeStack: 'DOTNETCORE|6.0'
